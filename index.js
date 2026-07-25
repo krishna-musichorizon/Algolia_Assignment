@@ -22,10 +22,10 @@ const FIXED_FACET_ORDER = {
 const FACET_FIELDS = [
   { key: 'cuisine', label: 'Cuisine', searchable: true },
   { key: 'city', label: 'City', searchable: true },
-  { key: 'dining_style', label: 'Dining style', searchable: true },
-  { key: 'neighborhood', label: 'Neighborhood', searchable: true },
   { key: 'price_range', label: 'Price', searchable: false },
   { key: 'rating_bucket', label: 'Rating', searchable: false },
+  { key: 'dining_style', label: 'Dining style', searchable: true },
+  { key: 'neighborhood', label: 'Neighborhood', searchable: true },
 ];
 
 const FACET_DEFAULT_VISIBLE = 5;
@@ -161,6 +161,7 @@ function renderInterface() {
           <div class="results__stats-info">
             <span class="results__count-text" id="result-count"></span>
             <span class="results__time-text" id="result-time"></span>
+            <span class="results__location-status" id="location-status" hidden></span>
           </div>
           <div class="results__sort">
             <label for="sort-select" class="results__sort-label">Sort</label>
@@ -206,6 +207,7 @@ async function init() {
   const filterHeader = document.querySelector('.filter__header');
   const filterContainer = document.querySelector('.filter__container');
   const sortSelect = document.getElementById('sort-select');
+  const locationStatus = document.getElementById('location-status');
 
   filterHeader.addEventListener('click', () => {
     filterHeader.classList.toggle('filter__header--open');
@@ -214,7 +216,12 @@ async function init() {
 
   const client = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_SEARCH_KEY);
 
+  const NEARBY_THRESHOLD_METERS = 150000; // beyond this, "near you" ranking isn't meaningful
+
   let userLocation = null;
+  let geoCoverage = null; // null (unknown yet) | 'near' | 'far'
+  let geoPermissionState = 'unknown'; // 'prompt' | 'granted' | 'denied' | 'unsupported' | 'unknown'
+  let nearestLocationLabel = '';
   let latestSearchRequestId = 0;
   let currentQuery = '';
   let currentPage = 0;
@@ -245,12 +252,36 @@ async function init() {
       .filter((group) => group.length > 0);
     if (facetFilters.length) params.facetFilters = facetFilters;
 
-    if (userLocation) {
+    if (userLocation && geoCoverage !== 'far') {
       params.aroundLatLng = `${userLocation.lat},${userLocation.lng}`;
       params.aroundRadius = 'all';
     }
 
     return params;
+  }
+
+  function renderLocationStatus() {
+    if (userLocation && geoCoverage === 'near') {
+      locationStatus.textContent = `📍 Showing results near ${nearestLocationLabel}`;
+      locationStatus.hidden = false;
+      return;
+    }
+
+    if (userLocation && geoCoverage === 'far') {
+      locationStatus.textContent = '📍 No restaurants found near your location — showing top-rated nationwide';
+      locationStatus.hidden = false;
+      return;
+    }
+
+    if (!userLocation && geoPermissionState === 'prompt') {
+      locationStatus.innerHTML = '<button type="button" id="location-enable-link" class="results__location-link">📍 Enable location to see nearby results</button>';
+      locationStatus.hidden = false;
+      document.getElementById('location-enable-link').addEventListener('click', () => requestLocation());
+      return;
+    }
+
+    locationStatus.hidden = true;
+    locationStatus.textContent = '';
   }
 
   function getFacetOptions(key) {
@@ -362,6 +393,23 @@ async function init() {
   function renderSearchResult(content) {
     lastContent = content;
     const hits = content.hits || [];
+
+    if (userLocation && geoCoverage === null) {
+      const nearest = hits[0];
+      const distance = nearest && nearest._geoloc ? haversineDistance(userLocation, nearest._geoloc) : Infinity;
+      if (distance <= NEARBY_THRESHOLD_METERS) {
+        geoCoverage = 'near';
+        nearestLocationLabel = nearest.display_location || nearest.city || 'your area';
+      } else {
+        geoCoverage = 'far';
+      }
+      renderLocationStatus();
+      if (geoCoverage === 'far') {
+        updateSearch(); // re-run without geo bias now that we know there's no nearby coverage
+        return;
+      }
+    }
+
     resultCount.textContent = `${content.nbHits.toLocaleString()} restaurants found`;
     resultTime.textContent = `in ${content.processingTimeMS} ms`;
     renderFacetPanel();
@@ -444,23 +492,54 @@ async function init() {
     });
   });
 
-  if (navigator.geolocation) {
+  function requestLocation() {
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        userLocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
+        userLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
         updateSearch();
       },
       () => {
+        geoPermissionState = 'denied';
+        renderLocationStatus();
         updateSearch();
       },
       { timeout: 5000 }
     );
-  } else {
+  }
+
+  async function initGeoPrompt() {
+    if (!navigator.geolocation) {
+      geoPermissionState = 'unsupported';
+      updateSearch();
+      return;
+    }
+
+    let permissionState = 'prompt';
+    if (navigator.permissions && navigator.permissions.query) {
+      try {
+        const status = await navigator.permissions.query({ name: 'geolocation' });
+        permissionState = status.state;
+      } catch (error) {
+        permissionState = 'prompt';
+      }
+    }
+    geoPermissionState = permissionState;
+
+    if (permissionState === 'granted') {
+      requestLocation();
+      return;
+    }
+
+    if (permissionState === 'denied') {
+      updateSearch();
+      return;
+    }
+
+    renderLocationStatus();
     updateSearch();
   }
+
+  initGeoPrompt();
 }
 
 init();
