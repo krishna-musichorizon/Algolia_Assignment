@@ -1,0 +1,24 @@
+{
+  "name": "se-assignment",
+  "version": "1.0.0",
+  "description": "Example template for Algolia JavaScript helper",
+  "keywords": [],
+  "private": true,
+  "dependencies": {
+    "algoliasearch": "4.20.0",
+    "algoliasearch-helper": "3.15.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/algoliasearch": "3.30.1",
+    "parcel-bundler": "1.9.7"
+  },
+  "scripts": {
+    "start": "parcel index.html",
+    "prepare-data": "node scripts/prepare-data.js",
+    "import-algolia": "node scripts/import-algolia.js"
+  },
+  "engines": {
+    "node": "^9.6.1"
+  }
+}

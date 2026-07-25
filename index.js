@@ -1,0 +1,423 @@
+import algoliasearch from "algoliasearch";
+
+const ALGOLIA_APP_ID = 'R8X6F7NECU';
+const ALGOLIA_SEARCH_KEY = '252d8bbc573b1eba52a9f256bb82bd95';
+const ALGOLIA_INDEX_NAME = 'aglogia-demo-restaurants';
+
+const FEATURED_QUERIES = ['Italian', 'Sushi', 'Seafood', 'Steakhouse'];
+
+const PRICE_ORDER = ['$30 and under', '$31 to $50', '$50 and over'];
+const RATING_ORDER = ['Excellent', 'Very Good', 'Good', 'Average', 'Unknown'];
+const FIXED_FACET_ORDER = {
+  price_range: PRICE_ORDER,
+  rating_bucket: RATING_ORDER,
+};
+
+const FACET_FIELDS = [
+  { key: 'cuisine', label: 'Cuisine', searchable: true },
+  { key: 'city', label: 'City', searchable: true },
+  { key: 'dining_style', label: 'Dining style', searchable: true },
+  { key: 'neighborhood', label: 'Neighborhood', searchable: true },
+  { key: 'price_range', label: 'Price', searchable: false },
+  { key: 'rating_bucket', label: 'Rating', searchable: false },
+];
+
+const FACET_DEFAULT_VISIBLE = 5;
+
+function createElement(tag, className, html) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (html !== undefined) element.innerHTML = html;
+  return element;
+}
+
+function formatDistance(meters) {
+  if (meters == null) return '';
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
+function haversineDistance(from, to) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(to.lat - from.lat);
+  const dLon = toRad(to.lng - from.lng);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(from.lat)) *
+      Math.cos(toRad(to.lat)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function renderResult(hit, userLocation) {
+  const distance =
+    userLocation && hit._geoloc
+      ? formatDistance(haversineDistance(userLocation, hit._geoloc))
+      : '';
+
+  return `
+    <div class="results__item">
+      <div class="result">
+        <div class="result__image-container">
+          <img class="result__image" src="${hit.image_url || 'https://via.placeholder.com/80x80'}" alt="${hit.name}" />
+        </div>
+        <div class="result__text-contianer">
+          <h1 class="result__title">${hit.name}</h1>
+          <p class="result__rating">${hit.rating || 0} ★ (${hit.reviews_count || 0} reviews)<span>${distance ? ` · ${distance}` : ''}</span></p>
+          <p class="result__summary">${hit.cuisine || 'Unknown'} · ${hit.display_location || hit.city || ''} · ${hit.price_range || ''}</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderNoResults(query) {
+  return `
+    <div id="no-results-message">
+      <p>We didn't find any results for the search <em>"${query}"</em>.</p>
+      <button class="button__link" id="clear-filters">Clear search</button>
+    </div>
+  `;
+}
+
+function renderDebug(state) {
+  if (!state) return '';
+  return `
+    <div class="debug-panel">
+      <div><strong>Query:</strong> ${state.query || '(empty)'}</div>
+      <div><strong>Page:</strong> ${state.page + 1}</div>
+      <div><strong>Facets:</strong> ${JSON.stringify(state.facets || {})}</div>
+      <div><strong>Numeric filters:</strong> ${JSON.stringify(state.numericRefinements || {})}</div>
+      <div><strong>Query params:</strong> ${JSON.stringify({
+        queryType: state.queryType,
+        typoTolerance: state.typoTolerance,
+        removeWordsIfNoResults: state.removeWordsIfNoResults,
+      })}</div>
+    </div>
+  `;
+}
+
+function renderSuggestionChips() {
+  return FEATURED_QUERIES.map((query) => `
+    <button class="hero__chip" data-query="${query}">${query}</button>
+  `).join('');
+}
+
+function renderFilters() {
+  return `
+    <div class="filter__header filter__header--open">
+      <span class="filter__header-text">Filters</span>
+    </div>
+    <div class="filter__container filter__container--open">
+      <div class="filter-group">
+        <button class="button__link" id="clear-filters-button">Clear filters</button>
+      </div>
+      <div id="facet-panel" class="facet-groups"></div>
+    </div>
+  `;
+}
+
+function renderInterface() {
+  const page = document.querySelector('.page__container');
+  page.innerHTML = `
+    <div class="search-bar">
+      <div class="search-bar__container">
+        <input id="search-input" class="search-bar__input" type="search" placeholder="Search restaurants, cuisine, location" autocomplete="off" />
+      </div>
+    </div>
+    <div class="page__content">
+      <div class="hero">
+        <div class="hero__content">
+          <h2>Discover restaurants for every kind of diner</h2>
+          <p>Search by restaurant name, cuisine, or neighborhood, then refine with filters for price and style.</p>
+          <div class="hero__chips">${renderSuggestionChips()}</div>
+        </div>
+      </div>
+      <aside class="filter">${renderFilters()}</aside>
+      <section class="results">
+        <div class="results__stats-bar">
+          <span class="results__count-text" id="result-count"></span>
+          <span class="results__time-text" id="result-time"></span>
+        </div>
+        <div id="results-list"></div>
+        <div id="load-more-wrapper"></div>
+        <div id="debug-wrapper"></div>
+      </section>
+    </div>
+  `;
+}
+
+function showMissingCredentials() {
+  const page = document.querySelector('.page__container');
+  page.innerHTML = `
+    <div class="page__content" style="padding: 24px;">
+      <h1>Algolia configuration required</h1>
+      <p>Please replace <code>YOUR_ALGOLIA_APP_ID</code>, <code>YOUR_ALGOLIA_SEARCH_KEY</code>, and <code>YOUR_INDEX_NAME</code> in <code>index.js</code>.</p>
+    </div>
+  `;
+}
+
+async function init() {
+  if (!ALGOLIA_APP_ID || !ALGOLIA_SEARCH_KEY || !ALGOLIA_INDEX_NAME) {
+    showMissingCredentials();
+    return;
+  }
+
+  renderInterface();
+
+  const searchInput = document.getElementById('search-input');
+  const clearFiltersButton = document.getElementById('clear-filters-button');
+  const resultCount = document.getElementById('result-count');
+  const resultTime = document.getElementById('result-time');
+  const resultsList = document.getElementById('results-list');
+  const loadMoreWrapper = document.getElementById('load-more-wrapper');
+  const debugWrapper = document.getElementById('debug-wrapper');
+  const facetPanel = document.getElementById('facet-panel');
+
+  const client = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_SEARCH_KEY);
+  const index = client.initIndex(ALGOLIA_INDEX_NAME);
+
+  let userLocation = null;
+  let latestSearchRequestId = 0;
+  let currentQuery = '';
+  let currentPage = 0;
+  let lastContent = null;
+
+  const selectedFacetValues = {};
+  const facetUiState = {};
+  FACET_FIELDS.forEach(({ key }) => {
+    selectedFacetValues[key] = new Set();
+    facetUiState[key] = { expanded: false, query: '' };
+  });
+
+  function buildSearchParams() {
+    const params = {
+      queryType: 'prefixAll',
+      typoTolerance: true,
+      ignorePlurals: true,
+      removeWordsIfNoResults: 'lastWords',
+      hitsPerPage: 20,
+      facets: FACET_FIELDS.map(({ key }) => key),
+      maxValuesPerFacet: 100,
+      page: currentPage,
+    };
+
+    const facetFilters = FACET_FIELDS
+      .map(({ key }) => [...selectedFacetValues[key]].map((value) => `${key}:${value}`))
+      .filter((group) => group.length > 0);
+    if (facetFilters.length) params.facetFilters = facetFilters;
+
+    if (userLocation) {
+      params.aroundLatLng = `${userLocation.lat},${userLocation.lng}`;
+      params.aroundRadius = 'all';
+    }
+
+    return params;
+  }
+
+  function getFacetOptions(key) {
+    const rawFacets = (lastContent && lastContent.facets && lastContent.facets[key]) || {};
+    let entries = Object.entries(rawFacets);
+
+    if (FIXED_FACET_ORDER[key]) {
+      entries.sort((a, b) => FIXED_FACET_ORDER[key].indexOf(a[0]) - FIXED_FACET_ORDER[key].indexOf(b[0]));
+    }
+
+    const query = facetUiState[key].query.trim().toLowerCase();
+    if (query) {
+      entries = entries.filter(([value]) => value.toLowerCase().includes(query));
+    }
+
+    const expanded = facetUiState[key].expanded;
+    const visibleEntries = expanded ? entries : entries.slice(0, FACET_DEFAULT_VISIBLE);
+    const hiddenCount = entries.length - visibleEntries.length;
+
+    return { visibleEntries, hiddenCount, expanded };
+  }
+
+  function renderFacetOptionsMarkup(key) {
+    const selected = selectedFacetValues[key];
+    const { visibleEntries, hiddenCount, expanded } = getFacetOptions(key);
+
+    const optionsMarkup = visibleEntries.length
+      ? visibleEntries.map(([value, count]) => `
+          <label class="facet-option">
+            <input type="checkbox" data-facet="${key}" value="${value}" ${selected.has(value) ? 'checked' : ''} />
+            <span class="facet-option__text">${value}</span>
+            <span class="facet-option__count">${count}</span>
+          </label>
+        `).join('')
+      : '<p class="facet-empty">No matching values.</p>';
+
+    let showMoreMarkup = '';
+    if (hiddenCount > 0) {
+      showMoreMarkup = `<button class="facet-show-more" data-facet-toggle="${key}">Show more values (${hiddenCount})</button>`;
+    } else if (expanded && visibleEntries.length > FACET_DEFAULT_VISIBLE) {
+      showMoreMarkup = `<button class="facet-show-more" data-facet-toggle="${key}">Show fewer values</button>`;
+    }
+
+    return { optionsMarkup, showMoreMarkup };
+  }
+
+  function attachOptionListeners(listEl, key) {
+    listEl.querySelectorAll('input[type="checkbox"][data-facet]').forEach((checkbox) => {
+      checkbox.addEventListener('change', () => {
+        const value = checkbox.value;
+        if (checkbox.checked) selectedFacetValues[key].add(value);
+        else selectedFacetValues[key].delete(value);
+        currentPage = 0;
+        updateSearch();
+      });
+    });
+  }
+
+  function attachShowMoreListener(el, key) {
+    const button = el.querySelector('[data-facet-toggle]');
+    if (!button) return;
+    button.addEventListener('click', () => {
+      facetUiState[key].expanded = !facetUiState[key].expanded;
+      updateFacetGroupDOM(key);
+    });
+  }
+
+  function updateFacetGroupDOM(key) {
+    const group = facetPanel.querySelector(`[data-facet-group="${key}"]`);
+    if (!group) return;
+    const { optionsMarkup, showMoreMarkup } = renderFacetOptionsMarkup(key);
+    const listEl = group.querySelector('.facet-option-list');
+    const showMoreWrapper = group.querySelector('.facet-show-more-wrapper');
+    listEl.innerHTML = optionsMarkup;
+    showMoreWrapper.innerHTML = showMoreMarkup;
+    attachOptionListeners(listEl, key);
+    attachShowMoreListener(showMoreWrapper, key);
+  }
+
+  function renderFacetPanel() {
+    facetPanel.innerHTML = FACET_FIELDS.map(({ key, label, searchable }) => {
+      const searchMarkup = searchable
+        ? `<div class="facet-group__search"><input type="text" data-facet-search="${key}" placeholder="Search ${label.toLowerCase()}" value="${facetUiState[key].query}" /></div>`
+        : '';
+      return `
+        <div class="facet-group" data-facet-group="${key}">
+          <h3 class="facet-group__title">${label}</h3>
+          ${searchMarkup}
+          <div class="facet-option-list"></div>
+          <div class="facet-show-more-wrapper"></div>
+        </div>
+      `;
+    }).join('');
+
+    FACET_FIELDS.forEach(({ key, searchable }) => {
+      updateFacetGroupDOM(key);
+      if (searchable) {
+        const group = facetPanel.querySelector(`[data-facet-group="${key}"]`);
+        const input = group.querySelector('[data-facet-search]');
+        input.addEventListener('input', () => {
+          facetUiState[key].query = input.value;
+          facetUiState[key].expanded = true;
+          updateFacetGroupDOM(key);
+        });
+      }
+    });
+  }
+
+  function renderSearchResult(content) {
+    lastContent = content;
+    const hits = content.hits || [];
+    resultCount.textContent = `${content.nbHits.toLocaleString()} restaurants found`;
+    resultTime.textContent = `in ${content.processingTimeMS} ms`;
+    renderFacetPanel();
+
+    if (!hits.length) {
+      resultsList.innerHTML = renderNoResults(currentQuery || '');
+      loadMoreWrapper.innerHTML = '';
+      const clearButton = document.getElementById('clear-filters');
+      if (clearButton) {
+        clearButton.addEventListener('click', () => clearAllFilters());
+      }
+      return;
+    }
+
+    resultsList.innerHTML = hits.map((hit) => renderResult(hit, userLocation)).join('');
+
+    if (content.page + 1 < content.nbPages) {
+      loadMoreWrapper.innerHTML = '<button class="button__link" id="load-more">Load more</button>';
+      const loadMoreButton = document.getElementById('load-more');
+      loadMoreButton.addEventListener('click', () => {
+        currentPage += 1;
+        updateSearch();
+      });
+    } else {
+      loadMoreWrapper.innerHTML = '';
+    }
+  }
+
+  function updateSearch() {
+    const requestId = ++latestSearchRequestId;
+    index.search(currentQuery, buildSearchParams())
+      .then((content) => {
+        if (requestId !== latestSearchRequestId) {
+          return;
+        }
+        renderSearchResult(content);
+      })
+      .catch((error) => {
+        console.error(error);
+        if (requestId === latestSearchRequestId) {
+          resultsList.innerHTML = renderNoResults(currentQuery || '');
+          loadMoreWrapper.innerHTML = '';
+        }
+      });
+  }
+
+  function clearAllFilters() {
+    searchInput.value = '';
+    currentQuery = '';
+    currentPage = 0;
+    FACET_FIELDS.forEach(({ key }) => {
+      selectedFacetValues[key].clear();
+      facetUiState[key] = { expanded: false, query: '' };
+    });
+    updateSearch();
+  }
+
+  searchInput.addEventListener('input', (event) => {
+    currentQuery = event.target.value.trim();
+    currentPage = 0;
+    updateSearch();
+  });
+
+  clearFiltersButton.addEventListener('click', () => clearAllFilters());
+
+  document.querySelectorAll('.hero__chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      currentQuery = chip.dataset.query;
+      currentPage = 0;
+      searchInput.value = currentQuery;
+      updateSearch();
+    });
+  });
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        userLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        updateSearch();
+      },
+      () => {
+        updateSearch();
+      },
+      { timeout: 5000 }
+    );
+  } else {
+    updateSearch();
+  }
+}
+
+init();

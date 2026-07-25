@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <title>Restaurant Locator - by Algolia</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="./assets/favicon.ico" type="image/png" />
+    <link rel="stylesheet" href="index.css" />
+  </head>
+
+  <body>
+    <!-- INTERFACE -->
+    <div class="page">
+      <div class="page__container"></div>
+    </div>
+    <!-- /INTERFACE -->
+
+    <!-- TEMPLATES -->
+    <script type="text/html" id="result-template">
+      <div class="results__item">
+      	<div class="result">
+      		<div class="result__image-container">
+      		</div>
+      		<div class="result__text-container">
+      			<h1 class="result__title">{{name}}</h1>
+      			<p class="result__summary">{{food_type}} | {{neighborhood}} | {{price_range}}</p>
+      		</div>
+      	</div>
+      </div>
+    </script>
+
+    <script type="text/html" id="no-results-template">
+      <div id="no-results-message">
+      	<p>We didn't find any results for the search <em>"{{query}}"</em>.</p>
+      	<a href="." class='clear-all'>Clear search</a>
+      </div>
+    </script>
+    <!-- /TEMPLATES -->
+
+    <!-- SCRIPTS -->
+    <script src="./index.js"></script>
+    <!-- /SCRIPTS -->
+  </body>
+</html>
