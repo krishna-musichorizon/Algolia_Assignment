@@ -43,6 +43,7 @@ const settings = {
     'payment_options',
     'display_location',
     'price_range',
+    'name_condensed',
   ],
   attributesForFaceting: [
     'searchable(cuisine)',

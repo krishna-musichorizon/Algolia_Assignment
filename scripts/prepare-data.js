@@ -71,6 +71,11 @@ async function main() {
       phone_number: extra.phone_number || restaurant.phone || '',
       rating_bucket: ratingBucket(rating),
       popularity_score: popularityScore(rating, reviewsCount),
+      // Space-stripped, lowercased name (e.g. "mamasfishhouse"). Algolia indexes a
+      // field with no separators as a single token, so a concatenated query like
+      // "mamasfishhouse" becomes an exact match against this field even though it
+      // can't match the normal tokenized `name` field.
+      name_condensed: restaurant.name.toLowerCase().replace(/[^a-z0-9]/g, ''),
       display_location: neighborhood && neighborhood !== restaurant.city
         ? `${neighborhood}, ${restaurant.city}`
         : restaurant.city,

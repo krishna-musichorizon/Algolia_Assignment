@@ -20,10 +20,11 @@ This project is a small Algolia-backed restaurant discovery experience for OpenT
 - `rating_bucket` — a discrete bucket (Excellent / Very Good / Good / Average / Unknown) derived from the continuous `rating`, used for faceting
 - `popularity_score` — `rating × log10(1 + reviews_count)`, a log-dampened score so a 5★ restaurant with 3 reviews doesn't outrank a 4.7★ with 5,000 reviews
 - `display_location` — a human-readable `"neighborhood, city"` string, only joined when the two differ (fixed a data bug where ~50% of records had a neighborhood field identical to the city, producing duplicated text like `"Carbondale, Carbondale"`)
+- `name_condensed` — a space-stripped, lowercased version of the restaurant name (e.g. `"mamasfishhouse"`). Testing turned up a real gap: Algolia's typo tolerance handles character-level mistakes, not missing word boundaries, so a concatenated query like `"mamasfishhouse"` matched nothing against the normal `name` field. Indexing this extra field fixes it, since a field with no separators is indexed as a single token, making the concatenated query an exact match. Trade-off: it only covers names actually in the dataset, not concatenated cuisine or location terms.
 
 ### Index configuration (`scripts/import-algolia.js`)
 
-- **Searchable attributes** are ordered as separate priority tiers — `name > cuisine > dining_style > neighborhood > city > state > address > payment_options > display_location > price_range` — so a restaurant-name match always outranks a cuisine or location match.
+- **Searchable attributes** are ordered as separate priority tiers — `name > cuisine > dining_style > neighborhood > city > state > address > payment_options > display_location > price_range > name_condensed` — so a restaurant-name match always outranks a cuisine or location match, with `name_condensed` last as a fallback for concatenated queries.
 - **Facets**: `cuisine`, `price_range`, `neighborhood`, `city`, `dining_style` (all facet-searchable) plus `rating_bucket`.
 - **Custom ranking**: `desc(popularity_score) → desc(rating) → desc(reviews_count)` as the tie-breaker after Algolia's built-in relevance criteria.
 - **Sort replicas**: two virtual replicas (`_top_rated`, `_price_asc`) that only override `customRanking`, powering a "Sort by" control (Recommended / Top Rated / Price: Low to High) without duplicating data or facet config.
