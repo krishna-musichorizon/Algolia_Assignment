@@ -3,6 +3,7 @@
 This project is a small Algolia-backed restaurant discovery experience for OpenTable. It combines a restaurant dataset from two sources, imports it into Algolia, and exposes a modern search UI for both known-item and exploratory discovery.
 
 **Live demo**: [https://agt.krish.info](https://agt.krish.info)
+
 **Demo video**: [https://www.youtube.com/watch?v=C1pY1KYUvbc](https://www.youtube.com/watch?v=C1pY1KYUvbc)
 
 ## What the demo does
