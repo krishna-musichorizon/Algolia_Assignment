@@ -1,4 +1,17 @@
 import algoliasearch from "algoliasearch";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// A plain CSS marker instead of Leaflet's bundled image icons: Parcel 1.x can't
+// resolve image assets from nested node_modules packages, and this also keeps
+// the marker on-brand instead of Leaflet's default blue pin.
+const restaurantMarkerIcon = L.divIcon({
+  className: 'map-marker',
+  html: '<span class="map-marker__pin"></span>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+  popupAnchor: [0, -10],
+});
 
 const ALGOLIA_APP_ID = 'R8X6F7NECU';
 const ALGOLIA_SEARCH_KEY = '56242d779655c1f05fff07c2ec205583';
@@ -142,6 +155,10 @@ function renderFilters() {
 function renderInterface() {
   const page = document.querySelector('.page__container');
   page.innerHTML = `
+    <header class="site-header">
+      <a href="/" id="logo-home-link" class="site-header__logo">Open<span class="site-header__logo-accent">Table</span></a>
+      <span class="site-header__tagline">Discovery, powered by Algolia</span>
+    </header>
     <div class="search-bar">
       <div class="search-bar__container">
         <input id="search-input" class="search-bar__input" type="search" placeholder="Search restaurants, cuisine, location" autocomplete="off" />
@@ -157,20 +174,28 @@ function renderInterface() {
       </div>
       <aside class="filter">${renderFilters()}</aside>
       <section class="results">
+        <div class="results__view-toggle" role="group" aria-label="Results view">
+          <button type="button" class="results__view-toggle-btn results__view-toggle-btn--active" data-view="list">☰ List</button>
+          <button type="button" class="results__view-toggle-btn" data-view="map">🗺️ Map</button>
+        </div>
         <div class="results__stats-bar">
           <div class="results__stats-info">
             <span class="results__count-text" id="result-count"></span>
             <span class="results__time-text" id="result-time"></span>
             <span class="results__location-status" id="location-status" hidden></span>
           </div>
-          <div class="results__sort">
-            <label for="sort-select" class="results__sort-label">Sort</label>
-            <select id="sort-select">
-              ${SORT_OPTIONS.map(({ value, label }) => `<option value="${value}">${label}</option>`).join('')}
-            </select>
+          <div class="results__sort-wrapper">
+            <button type="button" id="share-search-button" class="results__share-button">🔗 Share this search</button>
+            <div class="results__sort">
+              <label for="sort-select" class="results__sort-label">Sort</label>
+              <select id="sort-select">
+                ${SORT_OPTIONS.map(({ value, label }) => `<option value="${value}">${label}</option>`).join('')}
+              </select>
+            </div>
           </div>
         </div>
         <div id="results-list"></div>
+        <div id="results-map" hidden></div>
         <div id="load-more-wrapper"></div>
         <div id="debug-wrapper"></div>
       </section>
@@ -208,6 +233,92 @@ async function init() {
   const filterContainer = document.querySelector('.filter__container');
   const sortSelect = document.getElementById('sort-select');
   const locationStatus = document.getElementById('location-status');
+  const shareSearchButton = document.getElementById('share-search-button');
+  const resultsMap = document.getElementById('results-map');
+  const viewToggleButtons = document.querySelectorAll('.results__view-toggle-btn');
+  const logoHomeLink = document.getElementById('logo-home-link');
+
+  logoHomeLink.addEventListener('click', (event) => {
+    event.preventDefault();
+    clearAllFilters();
+  });
+
+  let currentView = 'list';
+  let leafletMap = null;
+  let leafletMarkers = [];
+
+  function renderMapView() {
+    const hits = (lastContent && lastContent.hits) || [];
+    const hitsWithLocation = hits.filter((hit) => hit._geoloc);
+
+    if (!leafletMap) {
+      leafletMap = L.map(resultsMap);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      }).addTo(leafletMap);
+    }
+
+    leafletMarkers.forEach((marker) => marker.remove());
+    leafletMarkers = hitsWithLocation.map((hit) => {
+      const popupHtml = `
+        <div class="map-popup">
+          <img class="map-popup__image" src="${hit.image_url || 'https://via.placeholder.com/160x100'}" alt="${hit.name}" />
+          <div class="map-popup__title">${hit.name}</div>
+          <div class="map-popup__meta">${hit.rating || 0} ★ &middot; ${hit.price_range || ''}</div>
+        </div>
+      `;
+      return L.marker([hit._geoloc.lat, hit._geoloc.lng], { icon: restaurantMarkerIcon }).bindPopup(popupHtml).addTo(leafletMap);
+    });
+
+    // The map container is hidden (display:none) while in list view, so Leaflet
+    // can't compute its size until it's visible; invalidateSize() forces a recheck.
+    setTimeout(() => {
+      leafletMap.invalidateSize();
+      if (leafletMarkers.length === 1) {
+        leafletMap.setView([hitsWithLocation[0]._geoloc.lat, hitsWithLocation[0]._geoloc.lng], 13);
+      } else if (leafletMarkers.length > 1) {
+        leafletMap.fitBounds(L.featureGroup(leafletMarkers).getBounds().pad(0.15));
+      } else {
+        leafletMap.setView([39.8283, -98.5795], 4); // continental US fallback when nothing has geoloc
+      }
+    }, 0);
+  }
+
+  function setView(view) {
+    currentView = view;
+    viewToggleButtons.forEach((button) => {
+      button.classList.toggle('results__view-toggle-btn--active', button.dataset.view === view);
+    });
+    resultsList.hidden = view !== 'list';
+    loadMoreWrapper.hidden = view !== 'list';
+    resultsMap.hidden = view !== 'map';
+    if (view === 'map') {
+      renderMapView();
+    }
+  }
+
+  viewToggleButtons.forEach((button) => {
+    button.addEventListener('click', () => setView(button.dataset.view));
+  });
+
+  shareSearchButton.addEventListener('click', async () => {
+    const url = window.location.href;
+    const originalText = shareSearchButton.textContent;
+
+    try {
+      await navigator.clipboard.writeText(url);
+      shareSearchButton.textContent = '✅ Link copied!';
+    } catch (error) {
+      window.prompt('Copy this link:', url);
+      shareSearchButton.textContent = originalText;
+      return;
+    }
+
+    setTimeout(() => {
+      shareSearchButton.textContent = originalText;
+    }, 1500);
+  });
 
   filterHeader.addEventListener('click', () => {
     filterHeader.classList.toggle('filter__header--open');
@@ -468,6 +579,7 @@ async function init() {
       if (clearButton) {
         clearButton.addEventListener('click', () => clearAllFilters());
       }
+      if (currentView === 'map') renderMapView();
       return;
     }
 
@@ -483,6 +595,8 @@ async function init() {
     } else {
       loadMoreWrapper.innerHTML = '';
     }
+
+    if (currentView === 'map') renderMapView();
   }
 
   function updateSearch() {
