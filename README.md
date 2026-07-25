@@ -6,41 +6,53 @@ This project is a small Algolia-backed restaurant discovery experience for OpenT
 
 - Joins restaurant data from `dataset/restaurants_list.json` and `dataset/restaurants_info.csv`
 - Cleans and enriches the records with cuisine, rating, reviews, price range, neighborhood, and geolocation
-- Indexes the merged records in Algolia with search, filter, ranking, and geo-awareness in mind
-- Provides a simple front-end demo for search, refinement, and discovery
+- Indexes the merged records in Algolia with search, filter, ranking, sorting, and geo-awareness in mind
+- Provides a full front-end demo for search, refinement, sorting, and discovery — with a reservation call-to-action tying the experience back to bookings
 
 ## Approach
 
 ### Data preparation
 
-The merge script creates a richer record by combining the base JSON restaurant list with metadata from the CSV, including:
+`scripts/prepare-data.js` joins the base JSON restaurant list with metadata from the CSV on `objectID`, and computes several derived fields:
 
-- `cuisine`
-- `rating`
-- `reviews_count`
-- `price_range`
-- `dining_style`
-- `neighborhood`
-- `display_location`
-- `popularity_score`
+- `cuisine`, `dining_style`, `price_range`, `neighborhood` — pulled directly from the CSV
+- `price_level` — a numeric 1-3 mapping of `price_range`, so price can be sorted, not just filtered
+- `rating_bucket` — a discrete bucket (Excellent / Very Good / Good / Average / Unknown) derived from the continuous `rating`, used for faceting
+- `popularity_score` — `rating × log10(1 + reviews_count)`, a log-dampened score so a 5★ restaurant with 3 reviews doesn't outrank a 4.7★ with 5,000 reviews
+- `display_location` — a human-readable `"neighborhood, city"` string, only joined when the two differ (fixed a data bug where ~50% of records had a neighborhood field identical to the city, producing duplicated text like `"Carbondale, Carbondale"`)
 
-These fields support both search relevance and filtering.
+### Index configuration (`scripts/import-algolia.js`)
+
+- **Searchable attributes** are ordered as separate priority tiers — `name > cuisine > dining_style > neighborhood > city > state > address > payment_options > display_location > price_range` — so a restaurant-name match always outranks a cuisine or location match.
+- **Facets**: `cuisine`, `price_range`, `neighborhood`, `city`, `dining_style` (all facet-searchable) plus `rating_bucket`.
+- **Custom ranking**: `desc(popularity_score) → desc(rating) → desc(reviews_count)` as the tie-breaker after Algolia's built-in relevance criteria.
+- **Sort replicas**: two virtual replicas (`_top_rated`, `_price_asc`) that only override `customRanking`, powering a "Sort by" control (Recommended / Top Rated / Price: Low to High) without duplicating data or facet config.
+- **Query tuning**: typo tolerance, `queryType: prefixAll`, `ignorePlurals`, `removeWordsIfNoResults: lastWords`, optional words for generic terms (restaurant/bar/grill/cafe), and cuisine synonyms (steakhouse↔steak house, sushi↔japanese, etc.).
 
 ### Relevance strategy
 
-The Algolia index is configured to favor:
-
-- exact name and cuisine matches
-- highly rated and well-reviewed restaurants
-- location-aware results when geolocation is available
-- typo-tolerant behavior for common search mistakes
+- Exact name and cuisine matches rank above generic location matches
+- Highly rated, well-reviewed restaurants are favored via custom ranking
+- Location-aware ranking when geolocation is available, with a **graceful out-of-coverage fallback**: if the nearest result is implausibly far (>150km), the app drops geo-bias entirely and shows the default popularity ranking instead of a meaningless "nearest US city to your location" ordering — this was tested directly against a real out-of-coverage case (Sydney, AU) rather than assumed
+- Typo-tolerant, prefix-matching query behavior for common search mistakes
 
 ### UX story
 
 The interface supports two user personas from the assignment:
 
-- users who know exactly what they want and search by restaurant name
-- users who are browsing and want inspiration through cuisine, price, and neighborhood exploration
+- **Known-item search**: users who know exactly what they want and search by restaurant name, with a "Reserve" call-to-action on every result (using the `reserve_url` field) to tie search directly to the booking outcome
+- **Open-ended discovery**: users who are browsing and want inspiration — hero cuisine chips, a full faceted filter panel (Cuisine, City, Price, Rating, Dining Style, Neighborhood) with multi-select checkboxes, per-facet search, and "show more values," plus a "Sort by" control
+
+### Location awareness
+
+- A contextual inline link ("📍 Enable location to see nearby results") requests permission only when clicked, rather than interrupting the page load with a browser prompt the user has no context for
+- Already-granted/denied permission state is detected via the Permissions API, so returning users aren't asked again
+- Once granted, a status line reflects what's actually happening: `"Showing results near <neighborhood, city>"` when nearby results exist, or the out-of-coverage fallback message when they don't
+
+### Mobile / touch
+
+- The filter panel collapses behind a "Filters" toggle on narrow screens (with a working expand/collapse, not just a static chevron) so results are visible immediately without scrolling past every facet
+- Checkbox tap targets are sized for touch, not just mouse precision
 
 ## Setup
 
@@ -52,27 +64,13 @@ The interface supports two user personas from the assignment:
    ```bash
    npm run prepare-data
    ```
-3. Copy `.env.example` to `.env` and fill in your Algolia app ID, admin API key, and index name. Then import the records:
+3. Copy `.env.example` to `.env` and fill in your Algolia app ID, admin API key, and index name. Then import the records (this also configures index settings and the two sort replicas):
    ```bash
    cp .env.example .env   # then edit .env with your credentials
    npm run import-algolia
    ```
-4. Add the same app ID, search key, and index name in `index.js`.
+4. Add the same app ID, a search-only key, and index name in `index.js`.
 5. Run the local demo:
    ```bash
    npm start
    ```
-
-## Interview talking points
-
-You can explain the solution like this:
-
-- I transformed a split dataset into a single, searchable restaurant index.
-- I chose searchable attributes for names, cuisine, and location to support known-item queries and discovery.
-- I used ranking and filtering to surface popular and high-quality restaurants.
-- I added location-aware search to make the experience feel more useful for real-world restaurant discovery.
-
-## Notes
-
-- The demo uses browser geolocation when available.
-- If geolocation is denied, it falls back to the default behavior and still returns relevant results.
