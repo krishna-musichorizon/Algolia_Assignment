@@ -12,13 +12,16 @@
   },
   "devDependencies": {
     "@types/algoliasearch": "3.30.1",
-    "parcel-bundler": "1.9.7"
+    "parcel-bundler": "1.9.7",
+    "wrangler": "^4.114.0"
   },
   "scripts": {
     "start": "parcel index.html",
     "build": "parcel build index.html",
     "prepare-data": "node scripts/prepare-data.js",
-    "import-algolia": "node scripts/import-algolia.js"
+    "import-algolia": "node scripts/import-algolia.js",
+    "deploy": "npm run build && wrangler deploy",
+    "preview": "npm run build && wrangler dev"
   },
   "engines": {
     "node": ">=22.0.0"
