@@ -235,6 +235,53 @@ async function init() {
     facetUiState[key] = { expanded: false, query: '' };
   });
 
+  // Reflects the current search state into the URL so it can be copied and shared.
+  // Deliberately excludes geolocation: sharing a link shouldn't leak the sharer's
+  // exact coordinates, so the recipient just gets their own fresh location prompt.
+  function syncUrlFromState() {
+    const params = new URLSearchParams();
+    if (currentQuery) params.set('q', currentQuery);
+    if (currentSortIndex !== ALGOLIA_INDEX_NAME) params.set('sort', currentSortIndex);
+    if (currentPage > 0) params.set('page', String(currentPage + 1));
+    FACET_FIELDS.forEach(({ key }) => {
+      const values = [...selectedFacetValues[key]];
+      if (values.length) params.set(key, values.join(','));
+    });
+
+    const queryString = params.toString();
+    const newUrl = queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname;
+    window.history.replaceState(null, '', newUrl);
+  }
+
+  // Pre-populates state (and matching form controls) from a shared URL, before the
+  // first search fires, so the initial render already reflects the shared link.
+  function readStateFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+
+    const q = params.get('q');
+    if (q) {
+      currentQuery = q;
+      searchInput.value = q;
+    }
+
+    const sort = params.get('sort');
+    if (sort && SORT_OPTIONS.some((option) => option.value === sort)) {
+      currentSortIndex = sort;
+      sortSelect.value = sort;
+    }
+
+    const page = parseInt(params.get('page'), 10);
+    if (Number.isInteger(page) && page > 1) {
+      currentPage = page - 1;
+    }
+
+    FACET_FIELDS.forEach(({ key }) => {
+      const raw = params.get(key);
+      if (!raw) return;
+      raw.split(',').filter(Boolean).forEach((value) => selectedFacetValues[key].add(value));
+    });
+  }
+
   function buildSearchParams() {
     const params = {
       queryType: 'prefixAll',
@@ -439,6 +486,7 @@ async function init() {
   }
 
   function updateSearch() {
+    syncUrlFromState();
     const requestId = ++latestSearchRequestId;
     client.initIndex(currentSortIndex).search(currentQuery, buildSearchParams())
       .then((content) => {
@@ -539,6 +587,7 @@ async function init() {
     updateSearch();
   }
 
+  readStateFromUrl();
   initGeoPrompt();
 }
 
