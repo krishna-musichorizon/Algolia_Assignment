@@ -23,6 +23,7 @@ const SORT_OPTIONS = [
   { value: ALGOLIA_INDEX_NAME, label: 'Recommended' },
   { value: `${ALGOLIA_INDEX_NAME}_top_rated`, label: 'Top Rated' },
   { value: `${ALGOLIA_INDEX_NAME}_price_asc`, label: 'Price: Low to High' },
+  { value: `${ALGOLIA_INDEX_NAME}_price_desc`, label: 'Price: High to Low' },
 ];
 
 const PRICE_ORDER = ['$30 and under', '$31 to $50', '$50 and over'];

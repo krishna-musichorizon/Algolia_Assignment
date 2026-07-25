@@ -29,6 +29,11 @@ const REPLICAS = [
     label: 'Price: Low to High',
     customRanking: ['asc(price_level)', 'desc(popularity_score)'],
   },
+  {
+    suffix: 'price_desc',
+    label: 'Price: High to Low',
+    customRanking: ['desc(price_level)', 'desc(popularity_score)'],
+  },
 ];
 
 const settings = {
