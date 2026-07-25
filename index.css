@@ -236,7 +236,8 @@ table {
 }
 
 .filter__container--open {
-  max-height: 800px;
+  max-height: 4000px;
+  overflow: visible;
 }
 @media (min-width: 768px) {
   .filter__container--open {
@@ -492,6 +493,29 @@ table {
   min-width: 0;
   flex: 1;
 }
+.result__action {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: auto;
+}
+.result__reserve-button {
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+  display: inline-block;
+  font-family: "Open Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  color: #ffffff;
+  background-color: #1c688e;
+  border-radius: 4px;
+  padding: 8px 16px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.result__reserve-button:hover {
+  background-color: #15516f;
+}
 .result__title {
   -moz-osx-font-smoothing: grayscale;
   -webkit-font-smoothing: antialiased;
@@ -546,6 +570,7 @@ table {
 }
 .results__stats-bar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
@@ -554,6 +579,40 @@ table {
   margin-bottom: 10px;
   border-bottom: 1px solid #e6e6e6;
   flex-shrink: 0;
+}
+
+.results__stats-info {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.results__sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.results__sort-label {
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+  font-family: "Open Sans", sans-serif;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #666666;
+}
+
+.results__sort select {
+  font-family: "Open Sans", sans-serif;
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid #dddddd;
+  border-radius: 4px;
+  color: #333333;
+  cursor: pointer;
 }
 
 .results__count-text {
@@ -632,7 +691,7 @@ table {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 4px;
+  padding: 7px 4px;
   border-radius: 3px;
   cursor: pointer;
 }
@@ -641,6 +700,8 @@ table {
 }
 .facet-option input[type="checkbox"] {
   flex-shrink: 0;
+  width: 16px;
+  height: 16px;
   cursor: pointer;
 }
 .facet-option__text {
@@ -658,6 +719,16 @@ table {
   font-family: "Open Sans", sans-serif;
   font-size: 12px;
   color: #a9a9a9;
+}
+.facet-option--rating .facet-option__text {
+  letter-spacing: 1px;
+  color: #ffab66;
+}
+.facet-option__sublabel {
+  margin-left: 6px;
+  font-size: 12px;
+  letter-spacing: normal;
+  color: #7c8b97;
 }
 .facet-show-more {
   display: inline-block;

@@ -1,10 +1,16 @@
 import algoliasearch from "algoliasearch";
 
 const ALGOLIA_APP_ID = 'R8X6F7NECU';
-const ALGOLIA_SEARCH_KEY = '252d8bbc573b1eba52a9f256bb82bd95';
+const ALGOLIA_SEARCH_KEY = '56242d779655c1f05fff07c2ec205583';
 const ALGOLIA_INDEX_NAME = 'aglogia-demo-restaurants';
 
 const FEATURED_QUERIES = ['Italian', 'Sushi', 'Seafood', 'Steakhouse'];
+
+const SORT_OPTIONS = [
+  { value: ALGOLIA_INDEX_NAME, label: 'Recommended' },
+  { value: `${ALGOLIA_INDEX_NAME}_top_rated`, label: 'Top Rated' },
+  { value: `${ALGOLIA_INDEX_NAME}_price_asc`, label: 'Price: Low to High' },
+];
 
 const PRICE_ORDER = ['$30 and under', '$31 to $50', '$50 and over'];
 const RATING_ORDER = ['Excellent', 'Very Good', 'Good', 'Average', 'Unknown'];
@@ -23,6 +29,14 @@ const FACET_FIELDS = [
 ];
 
 const FACET_DEFAULT_VISIBLE = 5;
+
+const RATING_BUCKET_LABELS = {
+  Excellent: '★★★★★ <span class="facet-option__sublabel">4.5 &amp; up</span>',
+  'Very Good': '★★★★☆ <span class="facet-option__sublabel">4.0 &amp; up</span>',
+  Good: '★★★☆☆ <span class="facet-option__sublabel">3.5 &amp; up</span>',
+  Average: '★★☆☆☆ <span class="facet-option__sublabel">Under 3.5</span>',
+  Unknown: '<span class="facet-option__sublabel">Not yet rated</span>',
+};
 
 function createElement(tag, className, html) {
   const element = document.createElement(tag);
@@ -69,6 +83,11 @@ function renderResult(hit, userLocation) {
           <p class="result__rating">${hit.rating || 0} ★ (${hit.reviews_count || 0} reviews)<span>${distance ? ` · ${distance}` : ''}</span></p>
           <p class="result__summary">${hit.cuisine || 'Unknown'} · ${hit.display_location || hit.city || ''} · ${hit.price_range || ''}</p>
         </div>
+        ${hit.reserve_url ? `
+          <div class="result__action">
+            <a class="result__reserve-button" href="${hit.reserve_url}" target="_blank" rel="noopener noreferrer">Reserve</a>
+          </div>
+        ` : ''}
       </div>
     </div>
   `;
@@ -108,10 +127,10 @@ function renderSuggestionChips() {
 
 function renderFilters() {
   return `
-    <div class="filter__header filter__header--open">
+    <div class="filter__header">
       <span class="filter__header-text">Filters</span>
     </div>
-    <div class="filter__container filter__container--open">
+    <div class="filter__container">
       <div class="filter-group">
         <button class="button__link" id="clear-filters-button">Clear filters</button>
       </div>
@@ -139,8 +158,16 @@ function renderInterface() {
       <aside class="filter">${renderFilters()}</aside>
       <section class="results">
         <div class="results__stats-bar">
-          <span class="results__count-text" id="result-count"></span>
-          <span class="results__time-text" id="result-time"></span>
+          <div class="results__stats-info">
+            <span class="results__count-text" id="result-count"></span>
+            <span class="results__time-text" id="result-time"></span>
+          </div>
+          <div class="results__sort">
+            <label for="sort-select" class="results__sort-label">Sort</label>
+            <select id="sort-select">
+              ${SORT_OPTIONS.map(({ value, label }) => `<option value="${value}">${label}</option>`).join('')}
+            </select>
+          </div>
         </div>
         <div id="results-list"></div>
         <div id="load-more-wrapper"></div>
@@ -176,14 +203,22 @@ async function init() {
   const loadMoreWrapper = document.getElementById('load-more-wrapper');
   const debugWrapper = document.getElementById('debug-wrapper');
   const facetPanel = document.getElementById('facet-panel');
+  const filterHeader = document.querySelector('.filter__header');
+  const filterContainer = document.querySelector('.filter__container');
+  const sortSelect = document.getElementById('sort-select');
+
+  filterHeader.addEventListener('click', () => {
+    filterHeader.classList.toggle('filter__header--open');
+    filterContainer.classList.toggle('filter__container--open');
+  });
 
   const client = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_SEARCH_KEY);
-  const index = client.initIndex(ALGOLIA_INDEX_NAME);
 
   let userLocation = null;
   let latestSearchRequestId = 0;
   let currentQuery = '';
   let currentPage = 0;
+  let currentSortIndex = ALGOLIA_INDEX_NAME;
   let lastContent = null;
 
   const selectedFacetValues = {};
@@ -244,9 +279,9 @@ async function init() {
 
     const optionsMarkup = visibleEntries.length
       ? visibleEntries.map(([value, count]) => `
-          <label class="facet-option">
+          <label class="facet-option ${key === 'rating_bucket' ? 'facet-option--rating' : ''}">
             <input type="checkbox" data-facet="${key}" value="${value}" ${selected.has(value) ? 'checked' : ''} />
-            <span class="facet-option__text">${value}</span>
+            <span class="facet-option__text">${key === 'rating_bucket' ? (RATING_BUCKET_LABELS[value] || value) : value}</span>
             <span class="facet-option__count">${count}</span>
           </label>
         `).join('')
@@ -357,7 +392,7 @@ async function init() {
 
   function updateSearch() {
     const requestId = ++latestSearchRequestId;
-    index.search(currentQuery, buildSearchParams())
+    client.initIndex(currentSortIndex).search(currentQuery, buildSearchParams())
       .then((content) => {
         if (requestId !== latestSearchRequestId) {
           return;
@@ -377,6 +412,8 @@ async function init() {
     searchInput.value = '';
     currentQuery = '';
     currentPage = 0;
+    currentSortIndex = ALGOLIA_INDEX_NAME;
+    sortSelect.value = ALGOLIA_INDEX_NAME;
     FACET_FIELDS.forEach(({ key }) => {
       selectedFacetValues[key].clear();
       facetUiState[key] = { expanded: false, query: '' };
@@ -391,6 +428,12 @@ async function init() {
   });
 
   clearFiltersButton.addEventListener('click', () => clearAllFilters());
+
+  sortSelect.addEventListener('change', () => {
+    currentSortIndex = sortSelect.value;
+    currentPage = 0;
+    updateSearch();
+  });
 
   document.querySelectorAll('.hero__chip').forEach((chip) => {
     chip.addEventListener('click', () => {

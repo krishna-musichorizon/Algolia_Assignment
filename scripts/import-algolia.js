@@ -15,6 +15,22 @@ if (!APP_ID || !ADMIN_KEY || !INDEX_NAME) {
   process.exit(1);
 }
 
+// Virtual replicas share the primary index's data, searchable attributes, and
+// facets — they only override ranking, so they're the right fit for a "Sort by"
+// control that shouldn't change what's searchable/filterable, only the order.
+const REPLICAS = [
+  {
+    suffix: 'top_rated',
+    label: 'Top Rated',
+    customRanking: ['desc(rating)', 'desc(reviews_count)', 'desc(popularity_score)'],
+  },
+  {
+    suffix: 'price_asc',
+    label: 'Price: Low to High',
+    customRanking: ['asc(price_level)', 'desc(popularity_score)'],
+  },
+];
+
 const settings = {
   searchableAttributes: [
     'name',
@@ -41,6 +57,7 @@ const settings = {
     'desc(rating)',
     'desc(reviews_count)',
   ],
+  replicas: REPLICAS.map(({ suffix }) => `virtual(${INDEX_NAME}_${suffix})`),
   attributesToSnippet: ['name:10', 'cuisine:5', 'display_location:5'],
   removeWordsIfNoResults: 'lastWords',
   ignorePlurals: true,
@@ -82,6 +99,12 @@ async function main() {
   for (let i = 0; i < chunks.length; i += 1) {
     console.log(`Uploading chunk ${i + 1}/${chunks.length}`);
     await index.saveObjects(chunks[i]);
+  }
+
+  console.log('Configuring replica ranking (sort options)...');
+  for (const { suffix, customRanking } of REPLICAS) {
+    const replicaIndex = client.initIndex(`${INDEX_NAME}_${suffix}`);
+    await replicaIndex.setSettings({ customRanking });
   }
 
   console.log('Import completed successfully.');
