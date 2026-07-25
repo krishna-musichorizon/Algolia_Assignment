@@ -72,11 +72,6 @@ The interface supports two user personas from the assignment:
 - Geolocation is deliberately excluded from the URL for privacy — sharing a link shouldn't leak the sharer's exact coordinates, so whoever opens it gets their own fresh location prompt instead
 - On page load, the URL is read back to restore that exact state before the first search fires, so a shared link reproduces the same results
 
-### Branding
-
-- A styled "OpenTable" text wordmark (not OpenTable's actual logo, since this is a pitch demo rather than an official OpenTable property) sits in a header above the search bar, with a small "Discovery, powered by Algolia" tagline that hides on very narrow screens
-- Clicking the logo resets all search state and returns to a clean root URL, acting as a home link without a full page reload
-
 ## Setup
 
 1. Install dependencies:
