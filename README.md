@@ -102,7 +102,3 @@ npm run build
 ```
 
 This outputs static HTML/JS/CSS to `dist/`. Point your host's build command at `npm install && npm run build` and its publish directory at `dist`. No environment variables are needed at deploy time, `index.js` embeds the Algolia app ID and public search-only key directly (safe, since it's a search-only key), and the admin key in `.env` is only ever used locally by `import-algolia.js`.
-
-## Notes
-
-- The search-only key originally in `index.js` turned out to be a temporary "debug" key with an expiration and a restriction to a single index, it would have silently broken the demo (and the sort replicas, which live in separate indices) once it expired. It was replaced with a permanent key correctly scoped to the primary index and its replicas, worth checking for on any Algolia key before relying on it long-term.
