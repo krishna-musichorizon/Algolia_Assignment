@@ -2,6 +2,9 @@
 
 This project is a small Algolia-backed restaurant discovery experience for OpenTable. It combines a restaurant dataset from two sources, imports it into Algolia, and exposes a modern search UI for both known-item and exploratory discovery.
 
+**Live demo**: [https://agt.krish.info](https://agt.krish.info)
+**Demo video**: [https://www.youtube.com/watch?v=C1pY1KYUvbc](https://www.youtube.com/watch?v=C1pY1KYUvbc)
+
 ## What the demo does
 
 - Joins restaurant data from `dataset/restaurants_list.json` and `dataset/restaurants_info.csv`
@@ -27,7 +30,7 @@ This project is a small Algolia-backed restaurant discovery experience for OpenT
 - **Searchable attributes** are ordered as separate priority tiers — `name > cuisine > dining_style > neighborhood > city > state > address > payment_options > display_location > price_range > name_condensed` — so a restaurant-name match always outranks a cuisine or location match, with `name_condensed` last as a fallback for concatenated queries.
 - **Facets**: `cuisine`, `price_range`, `neighborhood`, `city`, `dining_style` (all facet-searchable) plus `rating_bucket`.
 - **Custom ranking**: `desc(popularity_score) → desc(rating) → desc(reviews_count)` as the tie-breaker after Algolia's built-in relevance criteria.
-- **Sort replicas**: two virtual replicas (`_top_rated`, `_price_asc`) that only override `customRanking`, powering a "Sort by" control (Recommended / Top Rated / Price: Low to High) without duplicating data or facet config.
+- **Sort replicas**: three virtual replicas (`_top_rated`, `_price_asc`, `_price_desc`) that only override `customRanking`, powering a "Sort by" control (Recommended / Top Rated / Price: Low to High / Price: High to Low) without duplicating data or facet config.
 - **Query tuning**: typo tolerance, `queryType: prefixAll`, `ignorePlurals`, `removeWordsIfNoResults: lastWords`, optional words for generic terms (restaurant/bar/grill/cafe), and cuisine synonyms (steakhouse↔steak house, sushi↔japanese, etc.).
 
 ### Relevance strategy
@@ -55,6 +58,24 @@ The interface supports two user personas from the assignment:
 - The filter panel collapses behind a "Filters" toggle on narrow screens (with a working expand/collapse, not just a static chevron) so results are visible immediately without scrolling past every facet
 - Checkbox tap targets are sized for touch, not just mouse precision
 
+### Map view
+
+- A List/Map toggle above the results lets users browse either as a list or visually on a map, both stay in sync with the current search, facets, and sort
+- Built with Leaflet and free OpenStreetMap tiles rather than Google Maps, avoiding a Google Cloud billing/API key requirement that would add setup friction for anyone running this demo
+- Switching views reuses the search results already in memory (no extra Algolia calls), and markers use each record's `_geoloc`, auto-fit to the bounds of the current results, and show a popup with photo, name, rating, and price range on click
+
+### Shareable search links
+
+- The full search state (query, selected facets, sort option, page) syncs into the URL via `history.replaceState` after every search, with no page reload
+- A "Share this search" button copies the current URL to the clipboard, with a visible confirmation and a `window.prompt` fallback if clipboard access is blocked
+- Geolocation is deliberately excluded from the URL for privacy — sharing a link shouldn't leak the sharer's exact coordinates, so whoever opens it gets their own fresh location prompt instead
+- On page load, the URL is read back to restore that exact state before the first search fires, so a shared link reproduces the same results
+
+### Branding
+
+- A styled "OpenTable" text wordmark (not OpenTable's actual logo, since this is a pitch demo rather than an official OpenTable property) sits in a header above the search bar, with a small "Discovery, powered by Algolia" tagline that hides on very narrow screens
+- Clicking the logo resets all search state and returns to a clean root URL, acting as a home link without a full page reload
+
 ## Setup
 
 1. Install dependencies:
@@ -65,13 +86,27 @@ The interface supports two user personas from the assignment:
    ```bash
    npm run prepare-data
    ```
-3. Copy `.env.example` to `.env` and fill in your Algolia app ID, admin API key, and index name. Then import the records (this also configures index settings and the two sort replicas):
+3. Copy `.env.example` to `.env` and fill in your Algolia app ID, admin API key, and index name. Then import the records (this also configures index settings and the three sort replicas):
    ```bash
    cp .env.example .env   # then edit .env with your credentials
    npm run import-algolia
    ```
-4. Add the same app ID, a search-only key, and index name in `index.js`.
+4. Add the same app ID, a search-only key, and index name in `index.js`. Use a permanent, non-expiring key scoped to the primary index and its replicas, not a temporary/debug key (see Notes below).
 5. Run the local demo:
    ```bash
    npm start
    ```
+
+### Deploying
+
+This is a static site, there's no backend or server process, so it deploys to any static host:
+
+```bash
+npm run build
+```
+
+This outputs static HTML/JS/CSS to `dist/`. Point your host's build command at `npm install && npm run build` and its publish directory at `dist`. No environment variables are needed at deploy time, `index.js` embeds the Algolia app ID and public search-only key directly (safe, since it's a search-only key), and the admin key in `.env` is only ever used locally by `import-algolia.js`.
+
+## Notes
+
+- The search-only key originally in `index.js` turned out to be a temporary "debug" key with an expiration and a restriction to a single index, it would have silently broken the demo (and the sort replicas, which live in separate indices) once it expired. It was replaced with a permanent key correctly scoped to the primary index and its replicas, worth checking for on any Algolia key before relying on it long-term.
