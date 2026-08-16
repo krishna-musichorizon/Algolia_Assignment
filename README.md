@@ -33,6 +33,7 @@ This project is a small Algolia-backed restaurant discovery experience for OpenT
 - **Custom ranking**: `desc(popularity_score) → desc(rating) → desc(reviews_count)` as the tie-breaker after Algolia's built-in relevance criteria.
 - **Sort replicas**: three virtual replicas (`_top_rated`, `_price_asc`, `_price_desc`) that only override `customRanking`, powering a "Sort by" control (Recommended / Top Rated / Price: Low to High / Price: High to Low) without duplicating data or facet config.
 - **Query tuning**: typo tolerance, `queryType: prefixAll`, `ignorePlurals`, `removeWordsIfNoResults: lastWords`, optional words for generic terms (restaurant/bar/grill/cafe), and cuisine synonyms (steakhouse↔steak house, sushi↔japanese, etc.).
+- **Price-intent Rules**: testing found that `"$50"` matched the right price tier (Algolia strips the `$`, leaving the token `50`), but `"50 dollars"` or `"50 USD"` didn't, those tokens matched noise in restaurant *names* instead, since `name` outranks `price_range`. Four Algolia Rules (`price-intent-30-dollars`, `price-intent-30-usd`, `price-intent-50-dollars`, `price-intent-50-usd`) detect that phrasing and apply a `price_range` filter directly, replacing the text query entirely. Scope limit: Rules only match literal words, not arbitrary numbers, so this covers the two real price boundaries in the dataset (30, 50) but wouldn't generalize to `"40 dollars"` without a rule per number.
 
 ### Relevance strategy
 
@@ -102,3 +103,9 @@ npm run build
 ```
 
 This outputs static HTML/JS/CSS to `dist/`. Point your host's build command at `npm install && npm run build` and its publish directory at `dist`. No environment variables are needed at deploy time, `index.js` embeds the Algolia app ID and public search-only key directly (safe, since it's a search-only key), and the admin key in `.env` is only ever used locally by `import-algolia.js`.
+
+## Notes
+
+- **Search key hygiene**: the search-only key originally in `index.js` turned out to be a temporary "debug" key with an expiration and a restriction to a single index, it would have silently broken the demo (and the sort replicas, which live in separate indices) once it expired. Replaced with a permanent key correctly scoped to the primary index and all replicas.
+- **Virtual replicas don't passively inherit everything**: settings pushed via `setSettings()` (searchable attributes, facets, synonyms declared in code) apply consistently across the primary index and its virtual replicas. But synonyms added directly through the Algolia dashboard, outside that script, only landed on the primary, the sorted views silently lost that synonym matching. The fix pattern that recurred twice (once for synonyms, once for the price-intent Rules below): explicitly pass `forwardToReplicas: true` when writing rules/synonyms directly via the API, don't assume a replica mirrors a change made outside `setSettings()`.
+- **Rules quota**: batch-saving multiple Rules at once via `saveRules()` failed with `"Rules quota exceeded"` on this plan, even for just 4 rules, while saving the exact same rules one at a time via sequential `saveRule()` calls succeeded. `import-algolia.js` saves price-intent rules in a loop for this reason.

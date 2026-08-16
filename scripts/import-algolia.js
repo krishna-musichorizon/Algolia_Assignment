@@ -36,6 +36,17 @@ const REPLICAS = [
   },
 ];
 
+// Algolia Rules only match literal words or facet-value placeholders, no numeric
+// wildcard/regex capture, so this only covers phrasings around the two real price
+// boundaries in this dataset (30, 50). It won't generalize to arbitrary amounts
+// like "40 dollars" without a rule per number, a known, deliberate scope limit.
+const PRICE_INTENT_RULES = [
+  { number: '30', word: 'dollars', priceRangeValues: ['$30 and under'] },
+  { number: '30', word: 'usd', priceRangeValues: ['$30 and under'] },
+  { number: '50', word: 'dollars', priceRangeValues: ['$31 to $50', '$50 and over'] },
+  { number: '50', word: 'usd', priceRangeValues: ['$31 to $50', '$50 and over'] },
+];
+
 const settings = {
   searchableAttributes: [
     'name',
@@ -111,6 +122,26 @@ async function main() {
   for (const { suffix, customRanking } of REPLICAS) {
     const replicaIndex = client.initIndex(`${INDEX_NAME}_${suffix}`);
     await replicaIndex.setSettings({ customRanking });
+  }
+
+  console.log('Configuring price-intent rules...');
+  // Saved one at a time: saveRules() (batch) hit a "Rules quota exceeded" error on
+  // this plan even for a handful of rules, while sequential saveRule() calls for the
+  // same rules succeeded. forwardToReplicas matters here too — virtual replicas don't
+  // automatically inherit rules added outside setSettings(), the same gap that bit
+  // the manually-added synonyms.
+  for (const { number, word, priceRangeValues } of PRICE_INTENT_RULES) {
+    const rule = {
+      objectID: `price-intent-${number}-${word}`,
+      conditions: [{ pattern: `${number} ${word}`, anchoring: 'contains' }],
+      consequence: {
+        params: {
+          query: '',
+          filters: priceRangeValues.map((value) => `price_range:"${value}"`).join(' OR '),
+        },
+      },
+    };
+    await index.saveRule(rule, { forwardToReplicas: true });
   }
 
   console.log('Import completed successfully.');

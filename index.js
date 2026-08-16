@@ -394,7 +394,12 @@ async function init() {
     });
   }
 
-  function buildSearchParams() {
+  // excludeFacetKey omits that facet's own filter from facetFilters. Needed for
+  // disjunctive faceting: without it, once cuisine:American is selected, Algolia
+  // computes cuisine facet counts from the already-filtered (cuisine=American-only)
+  // result set, so every other cuisine value has zero matches there and vanishes
+  // from the list, making a second, different cuisine impossible to select.
+  function buildSearchParams(excludeFacetKey) {
     const params = {
       queryType: 'prefixAll',
       typoTolerance: true,
@@ -407,6 +412,7 @@ async function init() {
     };
 
     const facetFilters = FACET_FIELDS
+      .filter(({ key }) => key !== excludeFacetKey)
       .map(({ key }) => [...selectedFacetValues[key]].map((value) => `${key}:${value}`))
       .filter((group) => group.length > 0);
     if (facetFilters.length) params.facetFilters = facetFilters;
@@ -603,12 +609,28 @@ async function init() {
   function updateSearch() {
     syncUrlFromState();
     const requestId = ++latestSearchRequestId;
-    client.initIndex(currentSortIndex).search(currentQuery, buildSearchParams())
-      .then((content) => {
+    // One main query (all filters applied, for the actual results) plus one
+    // disjunctive query per facet (that facet's own filter excluded, so its full
+    // set of options stays visible), batched into a single request.
+    const queries = [
+      { indexName: currentSortIndex, query: currentQuery, params: buildSearchParams(null) },
+      ...FACET_FIELDS.map(({ key }) => ({
+        indexName: currentSortIndex,
+        query: currentQuery,
+        params: Object.assign(buildSearchParams(key), { hitsPerPage: 0 }),
+      })),
+    ];
+    client.search(queries)
+      .then(({ results }) => {
         if (requestId !== latestSearchRequestId) {
           return;
         }
-        renderSearchResult(content);
+        const [mainContent, ...facetResults] = results;
+        mainContent.facets = mainContent.facets || {};
+        FACET_FIELDS.forEach(({ key }, i) => {
+          mainContent.facets[key] = facetResults[i].facets[key] || {};
+        });
+        renderSearchResult(mainContent);
       })
       .catch((error) => {
         console.error(error);
