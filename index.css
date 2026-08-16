@@ -638,6 +638,25 @@ table {
   font-size: 12px;
   color: #ffab66;
 }
+/* .leaflet-popup-content a already sets its own link color with higher
+   specificity than a plain class selector; the extra .map-popup ancestor
+   here is what actually wins that fight, not a duplicate rule. */
+.map-popup .map-popup__reserve-button {
+  display: block;
+  margin-top: 8px;
+  padding: 6px 0;
+  border-radius: 4px;
+  background-color: #1c688e;
+  color: #ffffff;
+  font-family: "Open Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+.map-popup .map-popup__reserve-button:hover {
+  background-color: #15516f;
+}
 .map-marker__pin {
   display: block;
   width: 16px;

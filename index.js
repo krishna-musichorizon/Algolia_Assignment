@@ -267,6 +267,9 @@ async function init() {
           <img class="map-popup__image" src="${hit.image_url || 'https://via.placeholder.com/160x100'}" alt="${hit.name}" />
           <div class="map-popup__title">${hit.name}</div>
           <div class="map-popup__meta">${hit.rating || 0} ★ &middot; ${hit.price_range || ''}</div>
+          ${hit.reserve_url ? `
+            <a class="map-popup__reserve-button" href="${hit.reserve_url}" target="_blank" rel="noopener noreferrer">Reserve</a>
+          ` : ''}
         </div>
       `;
       return L.marker([hit._geoloc.lat, hit._geoloc.lng], { icon: restaurantMarkerIcon }).bindPopup(popupHtml).addTo(leafletMap);
